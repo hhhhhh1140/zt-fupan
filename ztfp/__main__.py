@@ -5,6 +5,8 @@
     python -m ztfp build          # 只重建特征/标签
     python -m ztfp train          # 只重新训练并输出回测
     python -m ztfp report [日期]  # 生成某天的复盘页，默认最新一天
+    python -m ztfp review         # 涨停预测复盘：过去给的连板概率事后准不准
+    python -m ztfp trend          # 趋势突破复盘：更新全市场日K -> 扫描 -> 回测 -> 生成页面
 """
 import sys
 
@@ -24,7 +26,16 @@ def main():
     if cmd in ("report", "daily"):
         from .report import make
         print("复盘页:", make(arg))
-    if cmd not in ("update", "build", "train", "report", "daily"):
+    if cmd in ("review", "daily"):
+        from .review import make as review
+        print("预测复盘页:", review())
+    if cmd in ("trend", "daily"):
+        from . import trend, trend_data
+        trend_data.update()
+        trend.scan()
+        trend.train()
+        print("趋势复盘页:", trend.report())
+    if cmd not in ("update", "build", "train", "report", "daily", "trend", "review"):
         print(__doc__)
 
 
