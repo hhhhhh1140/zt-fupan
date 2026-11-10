@@ -148,6 +148,8 @@ def make(date=None):
             res = (f'<td data-v="{r.n_close if not pd.isna(r.n_close) else -9}" class="{_col(r.n_close)}">'
                    f'{"连板" if ok else _pct(r.n_close, 1, True)}</td>')
         t20 = '<span class="tag">20cm</span>' if r.is20 else ""
+        if r.dev10_next >= 0.9:   # 明天再涨停，10 日偏离值就到或接近严重异常波动的 100% 线
+            t20 += '<span class="tag" style="color:var(--up);border-color:var(--up)">近异动线</span>'
         rows += (
             f'<tr><td class="l" data-v="{e(r["name"])}">{e(r["name"])}<span class="code">{r.code}</span>{t20}</td>'
             f'<td data-v="{r.lb}">{r.lb}</td><td class="l" data-v="{r.boards_n or 0}">{e(r.high_days or "")}</td>'
@@ -155,6 +157,7 @@ def make(date=None):
             f'<td data-v="{r.first_min}">{_hm(r.first_min)}</td><td data-v="{r.open_num or 0}">{int(r.open_num or 0)}</td>'
             f'<td data-v="{r.seal_ratio}">{_pct(r.seal_ratio, 2)}</td><td data-v="{r.turnover_rate}">{r.turnover_rate:.1f}%</td>'
             f'<td data-v="{r.currency_value}">{r.currency_value / 1e8:.0f}亿</td>'
+            f'<td data-v="{r.dev10}">{_pct(r.dev10, 0, True)}</td>'
             f'{_prob(r.p_lb)}<td data-v="{r.base_lb}">{_pct(r.base_lb, 0)}</td>'
             f'{_prob(r.p_swing, "w")}<td data-v="{r.base_sw}">{_pct(r.base_sw, 0)}</td>{res}'
             f'<td class="r">{e(r.reason_type or "")}</td></tr>')
@@ -162,7 +165,7 @@ def make(date=None):
     stock_table = (
         '<div class="card scroll"><table><thead><tr><th class="l s">股票</th><th class="s">连板</th><th class="l s">几天几板</th>'
         '<th class="l s">类型</th><th class="s">首封</th><th class="s">开板</th><th class="s">封单/流通</th><th class="s">换手</th>'
-        '<th class="s">流通市值</th><th class="s">连板概率</th><th class="s">同板数基准</th><th class="s">波段概率</th>'
+        '<th class="s">流通市值</th><th class="s">10日偏离</th><th class="s">连板概率</th><th class="s">同板数基准</th><th class="s">波段概率</th>'
         f'<th class="s">同板数基准</th>{res_th}<th class="l">涨停原因</th></tr></thead><tbody>{rows}</tbody></table></div>')
 
     # ---------- 题材梯队
@@ -197,13 +200,13 @@ def make(date=None):
 
     # ---------- 历史分组统计
     hs = hist.copy()
-    hs["板数"] = hs.lbb.map({1: "首板", 2: "2 板", 3: "3 板", 4: "4 板", 5: "5 板及以上"})
+    hs["板数"] = hs.lb.clip(upper=8).map({1: "首板", 2: "2 板", 3: "3 板", 4: "4 板", 5: "5 板", 6: "6 板", 7: "7 板", 8: "8 板及以上"})
     hs["首封时段"] = pd.cut(hs.first_min, [-1, 0.01, 10, 60, 120, 180, 241],
                         labels=["竞价/开盘即封", "9:40 前", "9:40–10:30", "10:30–11:30", "13:00–14:00", "14:00 后"])
     hs["开板"] = hs.open_num.fillna(0).clip(upper=3).map({0: "未开板", 1: "开板 1 次", 2: "开板 2 次", 3: "开板 3 次以上"})
     hs["情绪"] = pd.qcut(hs.zb_rate, 3, labels=["炸板率低（情绪好）", "炸板率中", "炸板率高（情绪差）"])
     stats = "".join([
-        _group_table(hs, "板数", "按连板数", ["首板", "2 板", "3 板", "4 板", "5 板及以上"]),
+        _group_table(hs, "板数", "按连板数", ["首板", "2 板", "3 板", "4 板", "5 板", "6 板", "7 板", "8 板及以上"]),
         _group_table(hs, "limit_up_type", "按涨停类型", ["换手板", "T字板", "一字板"]),
         _group_table(hs, "首封时段", "按首次封板时间"),
         _group_table(hs, "开板", "按开板次数", ["未开板", "开板 1 次", "开板 2 次", "开板 3 次以上"]),
@@ -236,7 +239,8 @@ def make(date=None):
 
 <h2>全部涨停股</h2>
 <div class="note">点表头排序。"同板数基准"是历史上同样连板数的股票的实际比例，用来对照模型概率高了还是低了。
-波段 = 之后 20 个交易日内最高价较今日收盘涨 20% 以上，且此前不跌破今日起涨点。一字板次日通常买不进，概率高不等于可操作。</div>
+波段 = 之后 20 个交易日内最高价较今日收盘涨 20% 以上，且此前不跌破今日起涨点。一字板次日通常买不进，概率高不等于可操作。
+"10日偏离"是近 10 个交易日涨幅减去上证同期涨幅；标"近异动线"表示明天再涨停后偏离值将超过 90%，到达或接近严重异常波动的 100% 线，可能被停牌核查。</div>
 {stock_table}
 {review}
 

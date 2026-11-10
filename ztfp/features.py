@@ -23,6 +23,8 @@ FEATURES = [
     "blk_num", "blk_days", "tag_cnt", "n_tags",
     # 位置/量价
     "pos60", "ret5_prev", "ret20_prev", "ma20_gap", "ma60_gap", "vol_ratio",
+    # 异动监管：10/30 日累计涨幅相对上证的偏离，以及"明天再涨停"后的 10 日偏离
+    "dev10", "dev30", "dev10_next",
     # 市场情绪
     "n_zt", "n_dt", "zb_rate", "max_lb", "n_lb2", "idx_pct", "prem_prev", "promo", "promo_lb",
 ]
@@ -34,6 +36,7 @@ FEATURE_CN = {
     "suc_rate": "历史封板率", "is_again_limit": "回封", "blk_num": "所属题材涨停数",
     "blk_days": "题材持续天数", "tag_cnt": "同原因涨停数", "n_tags": "原因标签数",
     "pos60": "距60日高点", "ret5_prev": "涨停前5日涨幅", "ret20_prev": "涨停前20日涨幅",
+    "dev10": "10日偏离值", "dev30": "30日偏离值", "dev10_next": "明日涨停后10日偏离",
     "ma20_gap": "偏离20日线", "ma60_gap": "偏离60日线", "vol_ratio": "量比(对前5日)",
     "n_zt": "全市场涨停数", "n_dt": "跌停数", "zb_rate": "炸板率", "max_lb": "最高板",
     "n_lb2": "连板家数", "idx_pct": "上证涨跌", "prem_prev": "昨日涨停溢价",
@@ -41,8 +44,8 @@ FEATURE_CN = {
 }
 
 
-def _kline_features(k):
-    """逐股计算位置特征和前向收益。k: 单只股票按日期升序。"""
+def _kline_features(k, idx, limit):
+    """逐股计算位置特征和前向收益。k: 单只股票按日期升序；idx: 日期->上证收盘；limit: 涨停幅度。"""
     c, h, l, o, v = (k[x].to_numpy(float) for x in ("close", "high", "low", "open", "volume"))
     n = len(c)
     s = pd.Series
@@ -56,6 +59,11 @@ def _kline_features(k):
     out["ma20_gap"] = c / s(c).rolling(20, min_periods=10).mean() - 1
     out["ma60_gap"] = c / s(c).rolling(60, min_periods=30).mean() - 1
     out["vol_ratio"] = v / s(v).shift(1).rolling(5, min_periods=3).mean()
+    # 严重异常波动的口径：区间涨幅 - 同期指数涨幅（10 日达 100%、30 日达 200% 触发）
+    ic = s(k["date"].map(idx).to_numpy(float))
+    out["dev10"] = c / s(c).shift(10) - ic / ic.shift(10)
+    out["dev30"] = c / s(c).shift(30) - ic / ic.shift(30)
+    out["dev10_next"] = c * (1 + limit) / s(c).shift(9) - ic / ic.shift(9)
     out["amount"] = k["amount"].to_numpy(float)
     out["k_low"], out["k_close"] = l, c
     # 次日表现（相对涨停收盘价）
@@ -133,9 +141,10 @@ def build(log=print):
 
     # ---- 日K位置特征 + 前向收益
     kl = pd.read_sql("SELECT * FROM kline WHERE code!='IDX' ORDER BY code, date", con)
+    idxc = pd.read_sql("SELECT date, close FROM kline WHERE code='IDX'", con).set_index("date")["close"]
     parts = []
     for code, kk in kl.groupby("code", sort=False):
-        f = _kline_features(kk)
+        f = _kline_features(kk, idxc, 0.2 if code[:2] in ("30", "68") else 0.1)
         f["code"] = code
         parts.append(f)
     kf = pd.concat(parts, ignore_index=True)

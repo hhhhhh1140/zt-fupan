@@ -3,8 +3,10 @@
 每个交易日 15:10 之后，在本目录运行：
 
 ```bash
-python3 -m ztfp daily
+/opt/anaconda3/bin/python3 -m ztfp daily
 ```
+
+要用 Anaconda 的 Python：系统自带的 `python3` 没有 pandas，会在采集完之后报错。
 
 依次完成：增量采集 → 重建特征/标签 → 滚动回测 → 生成 `reports/zt_日期.html`。
 
