@@ -13,7 +13,7 @@ from html import escape as e
 import numpy as np
 import pandas as pd
 
-from . import hot, report, review, sector, trend
+from . import hot, nshape, report, review, sector, trend
 from .db import ROOT, connect
 from .report import CSS, JS, _col, _hm, _pct, _prob
 
@@ -226,6 +226,10 @@ def make(log=print):
         tabs.append(("hot", "情绪主线", f"<main>{_main(hot.report())}</main>"))
     except Exception as ex:
         log(f"情绪主线页跳过：{ex}")
+    try:
+        tabs.append(("nshape", "N 型回调", f"<main>{_main(nshape.report())}</main>"))
+    except Exception as ex:      # 需要趋势库里的全市场日K
+        log(f"N 型回调页跳过：{ex}")
     tabs += [("zt", "涨停复盘", f"<main>{_main(report.make(date))}</main>"),
             ("review", "预测复盘", f"<main>{_main(review.make())}</main>")]
     try:
