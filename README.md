@@ -8,16 +8,16 @@
 
 要用 Anaconda 的 Python：系统自带的 `python3` 没有 pandas，会在采集完之后报错。
 
-依次完成：增量采集 → 重建特征/标签 → 滚动回测 → 生成 `reports/zt_日期.html`。
+依次完成：增量采集 → 重建特征/标签 → 滚动回测 → 生成合并复盘页 `reports/index.html`（同时存一份 `reports/fupan_日期.html`）。
 
-`daily` 会同时生成三份复盘：
+合并页用标签页切换四部分：
 
-- `reports/zt_日期.html`：涨停/连板复盘（次日连板概率）。
-- `reports/zt_review_日期.html`：涨停预测复盘（过去给的连板概率事后准不准，逐日、逐月、分档对照）。只跑这一份用 `review`。
-- `reports/trend_日期.html`：趋势突破复盘（长期底部后均线拐头、放量突破 120 日高点的股票）。只跑这一份用 `trend`。
-  信号定义和参数在 `ztfp/trend.py` 顶部。全市场日K存在 `data/trend.db`（约 400M）。
+- **明日关注**：今天涨停池里非一字板、次日连板概率最高的 10 只，附同概率档的历史结果。是模型排序，不是买卖建议。
+- **涨停复盘**：情绪、连板天梯、题材梯队、全部涨停股的连板/波段概率。
+- **预测复盘**：过去给的连板概率事后准不准（逐日、逐月、分档、偏差）。
+- **趋势突破**：长期底部后均线拐头、放量突破 120 日高点的股票。信号定义和参数在 `ztfp/trend.py` 顶部，全市场日K存在 `data/trend.db`（约 400M）。
 
-其它命令：`update`（只采集）、`build`、`train`、`report 20261106`（重看任意历史日）。
+其它命令：`page`（只重新生成合并页）、`update`（只采集）、`build`、`train`、`report 20261106`（单独重看任意历史日的涨停复盘）、`review`、`trend`。
 
 - 数据库：`data/ztfp.db`（SQLite）。同花顺只保留约一年的涨停数据，库里存下来的会一直保留，所以越跑样本越多。
 - 依赖：requests、pandas、numpy、scikit-learn（Anaconda 自带）。
