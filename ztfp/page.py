@@ -13,7 +13,7 @@ from html import escape as e
 import numpy as np
 import pandas as pd
 
-from . import report, review, trend
+from . import hot, report, review, trend
 from .db import ROOT, connect
 from .report import CSS, JS, _col, _hm, _pct, _prob
 
@@ -71,11 +71,15 @@ def _watch():
     top = h[h.rk <= TOP_N]
     allz = f[(f.oos == 1) & f.y_lb.notna()]
 
+    theme = hot.today_tags(date)       # {代码: (主线, 已炒作天数)}
+
     def rows(df, ranked, hb):
         out = ""
         for i, (_, r) in enumerate(df.iterrows(), 1):
             tags = ('<span class="tag">20cm</span>' if r.is20 else "") + (
                 '<span class="tag" style="color:var(--up);border-color:var(--up)">近异动线</span>' if r.dev10_next >= 0.9 else "")
+            if r.code in theme:
+                tags += f'<span class="tag">{e(theme[r.code][0])} · 第 {theme[r.code][1]} 天</span>'
             s = hb.loc[r.b] if r.b in hb.index else None
             hist = (f'<td>{_pct(s.y, 0)}</td><td class="{_col(s.no)}">{_pct(s.no, 1, True)}</td><td>{_pct(s.ol, 0)}</td>'
                     if s is not None else "<td>-</td><td>-</td><td>-</td>")
@@ -115,7 +119,7 @@ def _watch():
 <div class="tiles">{tiles}</div>
 
 <h2>明日连板概率最高的 {TOP_N} 只（非一字板）</h2>
-<div class="note">"同档"指历史上模型给出相近概率的非一字板股票，后三列是它们次日的实际情况。全部涨停股的概率见"涨停复盘"页。</div>
+<div class="note">"同档"指历史上模型给出相近概率的非一字板股票，后三列是它们次日的实际情况。名字后面的"羊 · 第 N 天"表示它属于正在炒作的情绪主线，详见"情绪主线"页。全部涨停股的概率见"涨停复盘"页。</div>
 {t1}
 
 <h2>一字板（{len(yz)} 只）</h2>
@@ -131,10 +135,14 @@ def _watch():
 
 
 def make(log=print):
-    """生成三个单页，再合并成带标签页的一页。"""
+    """生成各个单页，再合并成带标签页的一页。"""
     date, watch = _watch()
-    tabs = [("watch", "明日关注", watch),
-            ("zt", "涨停复盘", f"<main>{_main(report.make(date))}</main>"),
+    tabs = [("watch", "明日关注", watch)]
+    try:
+        tabs.append(("hot", "情绪主线", f"<main>{_main(hot.report())}</main>"))
+    except Exception as ex:
+        log(f"情绪主线页跳过：{ex}")
+    tabs += [("zt", "涨停复盘", f"<main>{_main(report.make(date))}</main>"),
             ("review", "预测复盘", f"<main>{_main(review.make())}</main>")]
     try:
         tabs.append(("trend", "趋势突破", f"<main>{_main(trend.report())}</main>"))
