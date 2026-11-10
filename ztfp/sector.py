@@ -187,12 +187,12 @@ def top(date=None, n=TOP):
         m = m.sort_values(["zt", "lb", "r5"], ascending=False)
         out.append(dict(code=r.code, name=r.name, kind=r.kind, r=r.r, f=r.f, fr=r.fr, rk=int(r.rk), days=days,
                         since=cal[i - days + 1] if days else date, n_stock=len(m), n_zt=int((m.zt > 0).sum()),
-                        n_today=int((m.lb > 0).sum()), lead=m[m.zt > 0].head(5), gain=m.sort_values("r5", ascending=False).head(3)))
+                        n_today=int((m.lb > 0).sum()), lead=m[m.zt > 0].head(5), mem=m))
     # 涨得多但主力资金在流出的：情绪炒作的板块常在这里（游资在买、大单在卖）
     o = d[(d.date == date) & (d.f < 0) & (d.r > 0)].sort_values("r", ascending=False).head(8)
     outflow = []
     for r in o.itertuples():
         m = mem[mem.code == r.code]
         m = m.assign(zt=m.stock.map(ztc.n).fillna(0), lb=m.stock.map(today).fillna(0), r5=m.stock.map(r5)).sort_values(["zt", "lb", "r5"], ascending=False)
-        outflow.append(dict(code=r.code, name=r.name, kind=r.kind, r=r.r, f=r.f, n_zt=int((m.zt > 0).sum()), lead=m[m.zt > 0].head(5)))
+        outflow.append(dict(code=r.code, name=r.name, kind=r.kind, r=r.r, f=r.f, n_zt=int((m.zt > 0).sum()), lead=m[m.zt > 0].head(5), mem=m))
     return out, outflow, date

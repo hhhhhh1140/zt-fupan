@@ -217,6 +217,20 @@ def current(date=None):
     return main, cal, date
 
 
+def name_members(kind, tok):
+    """全市场名字里带这个字/词的股票代码（题材类没有全市场名单，返回空）。"""
+    if kind == "题材":
+        return {}
+    try:
+        from .trend_data import connect as tc
+        con = tc()
+        u = pd.read_sql("SELECT code, name FROM stock", con)
+        con.close()
+    except Exception:
+        return {}
+    return {c: n for c, n in zip(u.code, u.name) if (kind, tok) in _name_tokens(n)}
+
+
 def today_tags(date=None):
     """{股票代码: "羊/阳/洋 · 第 30 天"}，给明日关注名单打标记用。一只股票属于多条主线时取最热的。"""
     try:

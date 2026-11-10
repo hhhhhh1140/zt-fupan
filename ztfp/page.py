@@ -13,11 +13,12 @@ from html import escape as e
 import numpy as np
 import pandas as pd
 
-from . import hot, report, review, trend
+from . import hot, report, review, sector, trend
 from .db import ROOT, connect
 from .report import CSS, JS, _col, _hm, _pct, _prob
 
 TOP_N = 10
+WRAP = ' style="white-space:normal;min-width:300px"'     # 成员列允许换行，不然右边的列会被挤出屏幕
 BINS = [0, .10, .15, .25, .40, .60, 1.01]
 BIN_NAMES = ["10% 以下", "10–15%", "15–25%", "25–40%", "40–60%", "60% 以上"]
 
@@ -40,6 +41,85 @@ const h=location.hash.slice(1);show(document.querySelector('section[data-p="'+h+
 def _main(path):
     """取出一个单页的 <main> 内容。"""
     return re.search(r"<main>(.*)</main>", path.read_text(encoding="utf-8"), re.S).group(1)
+
+
+def _r5(date):
+    """全市场股票近 5 日涨幅 {代码: 涨幅}，来自趋势库；没有就返回空。"""
+    try:
+        from .trend_data import connect as tc
+        con = tc()
+        ds = [r[0] for r in con.execute("SELECT DISTINCT date FROM k WHERE code='IDX' AND date<=? ORDER BY date DESC LIMIT 6", (date,))]
+        k = pd.read_sql("SELECT code, date, close FROM k WHERE date IN (?, ?)", con, params=(ds[-1], ds[0]))
+        con.close()
+        p = k.pivot(index="code", columns="date", values="close")
+        return (p[ds[0]] / p[ds[-1]] - 1).dropna().to_dict()
+    except Exception:
+        return {}
+
+
+def _themes(d, date):
+    """明日关注的板块和主线：每条带上今天涨停的成员（含连板概率）和没涨停但近 5 日最强的成员。
+    返回 (表格 html, {代码: [所属板块/主线名]})。"""
+    prob = d.set_index("code").p_lb.to_dict()
+    lbs = d.set_index("code").lb.to_dict()
+    names = d.set_index("code")["name"].to_dict()
+    r5 = _r5(date)
+    belong = {}
+    yi = lambda v: f"{v / 1e8:+.1f} 亿"
+
+    def cells(codes, allnames):
+        """codes: 这个板块/主线的全部成员代码 -> (今天涨停的, 没涨停但近 5 日最强的)"""
+        zt = sorted([c for c in codes if c in prob], key=lambda c: -(prob[c] if prob[c] == prob[c] else 0))
+        a = "、".join(f'{e(names[c])}<span class="code">{lbs[c]}板 {_pct(prob[c], 0)}</span>' for c in zt[:8]) or "今天没有涨停"
+        if len(zt) > 8:
+            a += f" 等 {len(zt)} 只"
+        rest = sorted([c for c in codes if c not in prob and c in r5], key=lambda c: -r5[c])[:5]
+        b = "、".join(f'{e(allnames.get(c, c))}<span class="code">{r5[c] * 100:+.0f}%</span>' for c in rest) or "-"
+        return a, b
+
+    rows = ""
+    try:
+        cur, _, _ = hot.current(date)
+    except Exception:
+        cur = []
+    for c in cur:
+        if c["idle"] > 0:
+            continue
+        allm = hot.name_members(c["kind"], c["tok"])
+        codes = set(allm) | set(c["mem"].code)
+        for code in c["mem"].code:
+            belong.setdefault(code, []).append(c["label"])
+        a, b = cells(codes, allm)
+        late = c["age"] > hot.LONG
+        rows += (f'<tr><td class="l"><b>{e(c["label"])}</b><span class="code">主线·{c["kind"]}</span></td>'
+                 f'<td>第 <b>{c["age"]}</b> 天{"<br><small style=color:var(--up)>少见的长度</small>" if late else ""}</td>'
+                 f'<td>-</td><td>-</td><td class="l"{WRAP}>{a}</td><td class="l"{WRAP}>{b if c["kind"] != "题材" else "-"}</td></tr>')
+    try:
+        top, outflow, _ = sector.top(date)
+    except Exception:
+        top, outflow = [], []
+    for o, flag in [(o, "") for o in top[:10]] + [(o, "资金流出") for o in outflow if o["n_zt"] > 0][:4]:
+        m = o["mem"]
+        allm = dict(zip(m.stock, m.name))
+        for code in m.stock:
+            if code in prob:
+                belong.setdefault(code, []).append(o["name"])
+        a, b = cells(set(m.stock), allm)
+        days = f'上榜 <b>{o["days"]}</b> 天' if not flag else f'<small>{flag}</small>'
+        rows += (f'<tr><td class="l"><b>{e(o["name"])}</b><span class="code">{o["kind"]}板块</span></td><td>{days}</td>'
+                 f'<td class="{_col(o["r"])}">{_pct(o["r"], 1, True)}</td><td class="{_col(o["f"])}">{yi(o["f"])}</td>'
+                 f'<td class="l"{WRAP}>{a}</td><td class="l"{WRAP}>{b}</td></tr>')
+    if not rows:
+        return "", belong
+    html = f"""<h2>明日关注的主线和板块</h2>
+<div class="note">前面几行是正在炒作的情绪主线，后面是近 5 日涨幅和主力资金流入综合最强的板块，最后几行是涨得多但主力资金流出的板块。
+"今天涨停的成员"后面是板数和模型给的明日连板概率；"没涨停但近 5 日最强"后面是近 5 日涨幅。</div>
+<div class="card scroll"><table><thead><tr><th class="l">主线 / 板块</th><th>持续</th><th>5日涨幅</th><th>5日主力净流入</th>
+<th class="l">今天涨停的成员</th><th class="l">没涨停但近 5 日最强的成员</th></tr></thead><tbody>{rows}</tbody></table></div>
+<div class="note">历史上（最近 123 个交易日）：同时在主线和强势板块里的涨停股，次日晋级率 28%，都不在的是 16%。
+但没涨停的成分股并没有稳定的后续涨幅：强势板块成分股之后 5 日比全市场多 0.3%，10 日反而少 0.3%，板块内涨幅最靠前的几只更差。</div>
+"""
+    return html, belong
 
 
 def _watch():
@@ -72,6 +152,8 @@ def _watch():
     allz = f[(f.oos == 1) & f.y_lb.notna()]
 
     theme = hot.today_tags(date)       # {代码: (主线, 已炒作天数)}
+    d["b"] = pd.cut(d.p_lb, BINS, right=False, labels=BIN_NAMES)
+    themes_html, belong = _themes(d, date)
 
     def rows(df, ranked, hb):
         out = ""
@@ -88,11 +170,12 @@ def _watch():
                 + f'<td class="l">{e(r["name"])}<span class="code">{r.code}</span>{tags}</td>'
                 f'<td>{r.lb} 板</td><td class="l">{e(r.limit_up_type or "")}</td><td>{_hm(r.first_min)}</td><td>{int(r.open_num)}</td>'
                 f'<td>{_pct(r.seal_ratio, 2)}</td><td>{r.turnover_rate:.1f}%</td><td>{r.latest:.2f}</td>'
-                f'{_prob(r.p_lb)}{hist}<td class="r">{e(r.reason_type or "")}</td></tr>')
+                f'{_prob(r.p_lb)}{hist}<td class="l">{e("、".join(belong.get(r.code, [])[:3])) or "-"}</td>'
+                f'<td class="r">{e(r.reason_type or "")}</td></tr>')
         return out
 
     head = ('<th class="l">股票</th><th>连板</th><th class="l">类型</th><th>首封</th><th>开板</th><th>封单/流通</th><th>换手</th>'
-            '<th>今收</th><th>明日连板概率</th><th>同档历史晋级率</th><th>同档次日平均高开</th><th>同档开盘即涨停</th><th class="l">涨停原因</th>')
+            '<th>今收</th><th>明日连板概率</th><th>同档历史晋级率</th><th>同档次日平均高开</th><th>同档开盘即涨停</th><th class="l">所属主线 / 强势板块</th><th class="l">涨停原因</th>')
     buy = d[d.limit_up_type != "一字板"].sort_values("p_lb", ascending=False)
     yz = d[d.limit_up_type == "一字板"].sort_values("p_lb", ascending=False)
     t1 = f'<div class="card scroll"><table><thead><tr><th></th>{head}</tr></thead><tbody>{rows(buy.head(TOP_N), True, hb)}</tbody></table></div>'
@@ -118,6 +201,7 @@ def _watch():
 <div class="sub">从今天的涨停池里按固定规则筛出：非一字板，按模型的次日连板概率从高到低取前 {TOP_N} 只。这是模型的排序结果，不是买卖建议。</div>
 <div class="tiles">{tiles}</div>
 
+{themes_html}
 <h2>明日连板概率最高的 {TOP_N} 只（非一字板）</h2>
 <div class="note">"同档"指历史上模型给出相近概率的非一字板股票，后三列是它们次日的实际情况。名字后面的"羊 · 第 N 天"表示它属于正在炒作的情绪主线，详见"情绪主线"页。全部涨停股的概率见"涨停复盘"页。</div>
 {t1}
