@@ -1,13 +1,14 @@
 """涨停复盘工具。
 
     python -m ztfp daily          # 收盘后跑：更新数据 -> 特征 -> 训练 -> 生成合并复盘页 reports/index.html
-    python -m ztfp page           # 只重新生成合并页（明日关注 / 情绪主线 / N 型回调 / 涨停复盘 / 预测复盘 / 趋势突破）
+    python -m ztfp page           # 只重新生成合并页（明日关注 / 竞价复盘 / 情绪主线 / N 型回调 / 涨停复盘 / 预测复盘 / 趋势突破）
     python -m ztfp update         # 只更新数据
     python -m ztfp build          # 只重建特征/标签
     python -m ztfp train          # 只重新训练并输出回测
     python -m ztfp report [日期]  # 生成某天的复盘页，默认最新一天
     python -m ztfp review         # 涨停预测复盘：过去给的连板概率事后准不准
     python -m ztfp hot            # 情绪主线：现在在炒哪个字/词/题材，已经炒了多少天
+    python -m ztfp auction        # 9:25 后跑：今天的竞价复盘；加日期重看某天；加 fetch 补抓历史竞价
     python -m ztfp nshape         # N 型回调：连板断板后回调中的股票、今天重新涨停的股票
     python -m ztfp sector         # 只更新板块行情和资金流（东方财富）
     python -m ztfp trend          # 趋势突破复盘：更新全市场日K -> 扫描 -> 回测 -> 生成页面
@@ -51,13 +52,28 @@ def main():
         hot.scan()
         if cmd == "hot":
             print("情绪主线页:", hot.report())
+    if cmd == "auction":
+        from . import auction
+        if arg == "fetch":
+            auction.fetch()
+        else:
+            try:
+                print("竞价复盘页:", auction.report(arg) if arg else auction.live())
+            except RuntimeError as ex:
+                print("竞价复盘没有生成：", ex)
+    if cmd == "daily":
+        from . import auction
+        try:      # 收盘后把今天的竞价补进历史，明早的模型就能用上
+            auction.fetch()
+        except Exception as ex:
+            print("竞价数据更新失败：", ex)
     if cmd == "nshape":
         from . import nshape
         print("N 型回调页:", nshape.report())
     if cmd in ("page", "daily"):
         from .page import make as page
         print("合并复盘页:", page())
-    if cmd not in ("update", "build", "train", "report", "daily", "trend", "review", "page", "hot", "sector", "nshape"):
+    if cmd not in ("update", "build", "train", "report", "daily", "trend", "review", "page", "hot", "sector", "nshape", "auction"):
         print(__doc__)
 
 

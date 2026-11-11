@@ -13,7 +13,7 @@ from html import escape as e
 import numpy as np
 import pandas as pd
 
-from . import hot, nshape, report, review, sector, trend
+from . import auction, hot, nshape, report, review, sector, trend
 from .db import ROOT, connect
 from .report import CSS, JS, _col, _hm, _pct, _prob
 
@@ -222,6 +222,10 @@ def make(log=print):
     """生成各个单页，再合并成带标签页的一页。"""
     date, watch = _watch()
     tabs = [("watch", "明日关注", watch)]
+    try:
+        tabs.append(("auction", "竞价复盘", f"<main>{_main(auction.report())}</main>"))
+    except Exception as ex:      # 需要先跑过 python -m ztfp auction fetch
+        log(f"竞价复盘页跳过：{ex}")
     try:
         tabs.append(("hot", "情绪主线", f"<main>{_main(hot.report())}</main>"))
     except Exception as ex:
